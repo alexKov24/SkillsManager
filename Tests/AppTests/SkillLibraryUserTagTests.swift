@@ -96,6 +96,27 @@ struct SkillLibraryUserTagTests {
         #expect(library.tagCounts["favorites"] == 1)
     }
 
+    // MARK: - Persistence
+
+    @Test func `saved tags show after skills load`() async {
+        let skill = makeSkill(id: "my-skill")
+        let localCatalog = makeLocalCatalog(skills: [skill])
+        let repo = MockUserTagRepository()
+        given(repo).allTags().willReturn(["favorites"])
+        given(repo).tags(for: .value("my-skill")).willReturn(["favorites"])
+        given(repo).tags(for: .any).willReturn([])
+
+        let library = SkillLibrary(
+            localCatalog: localCatalog,
+            installer: MockSkillInstaller(),
+            skillTags: SkillTags(repository: repo)
+        )
+
+        await library.loadSkills()
+
+        #expect(library.tagCounts["favorites"] == 1)
+    }
+
     // MARK: - Helpers
 
     private func makeSkill(id: String, tags: [String] = []) -> Skill {

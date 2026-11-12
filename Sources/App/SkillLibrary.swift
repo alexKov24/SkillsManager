@@ -195,7 +195,10 @@ public final class SkillLibrary {
 
         // Switch to the new catalog and load skills
         selectedSource = .remote(repoId: catalog.id)
-        Task { await catalog.loadSkills() }
+        Task {
+            await catalog.loadSkills()
+            skillTags.loadSkillTags(for: catalog.skills.map(\.id))
+        }
     }
 
     /// Remove a remote catalog
@@ -270,6 +273,9 @@ public final class SkillLibrary {
 
         // Sync installation status on remote catalog skills
         syncInstallationStatus()
+
+        // Load saved custom tags for the skills now in memory
+        skillTags.loadSkillTags(for: catalogs.flatMap { $0.skills.map(\.id) })
     }
 
     /// Refresh skills

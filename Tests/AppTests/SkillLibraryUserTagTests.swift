@@ -160,3 +160,80 @@ struct SkillLibraryUsageTests {
         #expect(library.usageCount(for: skill) == 0)
     }
 }
+
+@Suite
+@MainActor
+struct SkillLibraryHeaderTests {
+
+    @Test func `tagCounts hides tags no skill in view has`() {
+        let skill = Skill(
+            id: "a", name: "a", description: "", version: "1.0.0", content: "",
+            source: .local(provider: .claude), tags: ["development"]
+        )
+        let skillTags = SkillTags()
+        skillTags.createTag("unused", for: "elsewhere")
+        let library = SkillLibrary(
+            localCatalog: catalog([skill]),
+            installer: MockSkillInstaller(),
+            skillTags: skillTags
+        )
+
+        #expect(library.tagCounts == ["development": 1])
+    }
+
+    @Test func `tagCounts keeps the selected tag so it can be cleared`() {
+        let skillTags = SkillTags()
+        skillTags.createTag("unused", for: "elsewhere")
+        let library = SkillLibrary(
+            localCatalog: catalog([]),
+            installer: MockSkillInstaller(),
+            skillTags: skillTags
+        )
+        library.selectedTag = "unused"
+
+        #expect(library.tagCounts == ["unused": 0])
+    }
+
+    @Test func `list view sorts by uses, most used first`() async {
+        let skills = ["rare", "popular", "unused"].map {
+            Skill(id: $0, name: $0, description: "", version: "1.0.0", content: "", source: .local(provider: .claude))
+        }
+        let usage = MockSkillUsageRepository()
+        given(usage).usageCounts().willReturn(["rare": 1, "popular": 9])
+        let library = SkillLibrary(
+            localCatalog: catalog(skills),
+            installer: MockSkillInstaller(),
+            usageRepository: usage
+        )
+        await library.loadSkills()
+        library.viewMode = .list
+        library.sortByUses = true
+
+        #expect(library.filteredSkills.map(\.id) == ["popular", "rare", "unused"])
+    }
+
+    @Test func `grid view keeps catalog order`() async {
+        let skills = ["rare", "popular"].map {
+            Skill(id: $0, name: $0, description: "", version: "1.0.0", content: "", source: .local(provider: .claude))
+        }
+        let usage = MockSkillUsageRepository()
+        given(usage).usageCounts().willReturn(["rare": 1, "popular": 9])
+        let library = SkillLibrary(
+            localCatalog: catalog(skills),
+            installer: MockSkillInstaller(),
+            usageRepository: usage
+        )
+        await library.loadSkills()
+        library.sortByUses = true
+
+        #expect(library.filteredSkills.map(\.id) == ["rare", "popular"])
+    }
+
+    private func catalog(_ skills: [Skill]) -> SkillsCatalog {
+        let repo = MockSkillRepository()
+        given(repo).fetchAll().willReturn(skills)
+        let catalog = SkillsCatalog(name: "Local", loader: repo)
+        catalog.skills = skills
+        return catalog
+    }
+}

@@ -203,6 +203,7 @@ struct ContentView: View {
 
     private var listView: some View {
         LazyVStack(spacing: 0) {
+            listHeader
             ForEach(library.filteredSkills, id: \.listId) { skill in
                 SkillRowView(
                     skill: skill,
@@ -212,6 +213,48 @@ struct ContentView: View {
                 )
             }
         }
+    }
+
+    /// Column headers; clicking Uses toggles sorting by uses
+    private var listHeader: some View {
+        HStack(spacing: 0) {
+            columnTitle("Name")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            columnTitle("Providers")
+                .frame(width: 180, alignment: .leading)
+            sortHeader("Uses", isActive: library.sortByUses) { library.sortByUses.toggle() }
+                .frame(width: 90, alignment: .leading)
+            columnTitle("Version")
+                .frame(width: 120, alignment: .leading)
+        }
+        .padding(.bottom, 8)
+        .overlay(alignment: .bottom) {
+            Divider().overlay(DS.Colors.border)
+        }
+    }
+
+    private func sortHeader(_ title: String, isActive: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                columnTitle(title)
+                    .foregroundStyle(isActive ? DS.Colors.accent : DS.Colors.textMuted)
+                if isActive {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(DS.Colors.accent)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isActive ? "Back to catalog order" : "Sort by uses, most used first")
+    }
+
+    private func columnTitle(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(DS.Typography.micro)
+            .fontWeight(.semibold)
+            .foregroundStyle(DS.Colors.textMuted)
     }
 
     // MARK: - Empty / Loading States

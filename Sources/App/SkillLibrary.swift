@@ -37,6 +37,9 @@ public final class SkillLibrary {
     /// Selected tag filter (nil = show all)
     public var selectedTag: String?
 
+    /// Sort list view by uses, most used first
+    public var sortByUses = false
+
     /// Global skill tags — @Observable domain aggregate
     public let skillTags: SkillTags
 
@@ -91,12 +94,21 @@ public final class SkillLibrary {
             skills = skills.filter { $0.matches(query: searchQuery) }
         }
 
+        // Sort by uses (list view only); ties keep catalog order
+        if viewMode == .list && sortByUses {
+            skills = skills.enumerated()
+                .sorted { (usageCount(for: $0.element), -$0.offset) > (usageCount(for: $1.element), -$1.offset) }
+                .map(\.element)
+        }
+
         return skills
     }
 
-    /// Tag counts for the current view's skills
+    /// Tag counts for the current view's skills.
+    /// Hides tags no skill in view has, except the selected one so it can be cleared.
     public var tagCounts: [String: Int] {
         skillTags.tagCounts(for: selectedCatalog.skills)
+            .filter { $0.value > 0 || $0.key == selectedTag }
     }
 
     /// Count of local skills

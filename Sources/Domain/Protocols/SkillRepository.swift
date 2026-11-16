@@ -31,4 +31,10 @@ public protocol SkillInstaller: Sendable {
 
     /// Uninstall a skill from the specified provider
     func uninstall(_ skill: Skill, from provider: Provider) async throws -> Skill
+
+    /// Move an installed skill out of every provider folder so agents stop loading it
+    func archive(_ skill: Skill) async throws -> Skill
+
+    /// Move an archived skill back into the providers it was archived from
+    func restore(_ skill: Skill) async throws -> Skill
 }

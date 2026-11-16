@@ -6,6 +6,7 @@ public enum SkillInstallerError: Error, Sendable {
     case directoryCreationFailed(String)
     case fileWriteFailed(String)
     case skillNotRemote
+    case alreadyExists(String)
     case networkError(Error)
 }
 
@@ -38,6 +39,17 @@ public final class FileSystemSkillInstaller: SkillInstaller, @unchecked Sendable
 
             // skill.id is the folder name used for installation path
             let targetPath = "\(pathResolver.skillsPath(for: provider))/\(skill.id)"
+
+            // Local skill: copy its whole folder from a provider that already has it
+            if let sourcePath = installedFolder(of: skill) {
+                guard !fileManager.fileExists(atPath: targetPath) else {
+                    throw SkillInstallerError.alreadyExists(targetPath)
+                }
+                try createDirectory(at: pathResolver.skillsPath(for: provider))
+                try fileManager.copyItem(atPath: sourcePath, toPath: targetPath)
+                updatedSkill = updatedSkill.installing(for: provider)
+                continue
+            }
 
             // Create directory
             try createDirectory(at: targetPath)
@@ -77,7 +89,42 @@ public final class FileSystemSkillInstaller: SkillInstaller, @unchecked Sendable
         return skill.uninstalling(from: provider)
     }
 
+    public func archive(_ skill: Skill) async throws -> Skill {
+        let moves = skill.installedProviders.map {
+            (from: "\(pathResolver.skillsPath(for: $0))/\(skill.id)", to: "\(pathResolver.archivePath(for: $0))/\(skill.id)")
+        }
+        try move(moves)
+        return skill.archived()
+    }
+
+    public func restore(_ skill: Skill) async throws -> Skill {
+        let moves = skill.installedProviders.map {
+            (from: "\(pathResolver.archivePath(for: $0))/\(skill.id)", to: "\(pathResolver.skillsPath(for: $0))/\(skill.id)")
+        }
+        try move(moves)
+        return skill.archived(false)
+    }
+
     // MARK: - Private Helpers
+
+    /// Moves folders, checking every destination first so nothing moves if one would be overwritten
+    private func move(_ moves: [(from: String, to: String)]) throws {
+        for move in moves where fileManager.fileExists(atPath: move.to) {
+            throw SkillInstallerError.alreadyExists(move.to)
+        }
+        for move in moves where fileManager.fileExists(atPath: move.from) {
+            try createDirectory(at: (move.to as NSString).deletingLastPathComponent)
+            try fileManager.moveItem(atPath: move.from, toPath: move.to)
+        }
+    }
+
+    /// Folder of an installed local skill, to copy when linking it to another provider
+    private func installedFolder(of skill: Skill) -> String? {
+        guard skill.source.isLocal else { return nil }
+        return skill.installedProviders
+            .map { "\(pathResolver.skillsPath(for: $0))/\(skill.id)" }
+            .first { fileManager.fileExists(atPath: $0) }
+    }
 
     private func createDirectory(at path: String) throws {
         do {

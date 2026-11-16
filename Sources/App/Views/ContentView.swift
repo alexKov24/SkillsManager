@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var showAddCatalog = false
     @State private var showInstall = false
     @State private var showUninstall = false
+    @State private var pendingUninstall: [Skill] = []
 
     var body: some View {
         Group {
@@ -38,6 +39,26 @@ struct ContentView: View {
             if let skill = library.selectedSkill {
                 UninstallSheet(skill: skill, library: library)
             }
+        }
+        .confirmationDialog(
+            pendingUninstall.count == 1
+                ? "Uninstall \(pendingUninstall[0].name)?"
+                : "Uninstall \(pendingUninstall.count) skills?",
+            isPresented: Binding(
+                get: { !pendingUninstall.isEmpty },
+                set: { if !$0 { pendingUninstall = [] } }
+            )
+        ) {
+            Button("Uninstall", role: .destructive) {
+                let skills = pendingUninstall
+                Task { await library.uninstall(skills) }
+            }
+            Button("Archive Instead") {
+                let skills = pendingUninstall
+                Task { await library.archive(skills) }
+            }
+        } message: {
+            Text("This deletes the skill folders from every provider. Archive keeps them so you can restore later.")
         }
     }
 
@@ -160,6 +181,12 @@ struct ContentView: View {
         Group {
             if library.isLoading {
                 loadingView
+            } else if library.filteredSkills.isEmpty && library.selectedSource == .archived {
+                Text("No archived skills.\nRight-click a skill and choose Archive to put it away without deleting it.")
+                    .font(DS.Typography.body)
+                    .foregroundStyle(DS.Colors.textMuted)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
             } else if library.filteredSkills.isEmpty {
                 emptyStateView
             } else {
@@ -197,6 +224,7 @@ struct ContentView: View {
                         showInstall = true
                     }
                 )
+                .contextMenu { contextMenu(for: skill) }
             }
         }
     }
@@ -208,24 +236,45 @@ struct ContentView: View {
                 SkillRowView(
                     skill: skill,
                     usageCount: library.usageCount(for: skill),
-                    isSelected: library.selectedSkill?.listId == skill.listId,
-                    onSelect: { library.select(skill) }
+                    isSelected: library.isSelected(skill),
+                    onSelect: { click(skill) }
                 )
+                .contextMenu { contextMenu(for: skill) }
             }
         }
+    }
+
+    /// Click with ⌘ toggles, ⇧ extends, plain click selects one
+    private func click(_ skill: Skill) {
+        let flags = NSEvent.modifierFlags
+        if flags.contains(.command) {
+            library.toggleSelection(skill)
+        } else if flags.contains(.shift) {
+            library.extendSelection(to: skill)
+        } else {
+            library.select(skill)
+        }
+    }
+
+    private func contextMenu(for skill: Skill) -> some View {
+        SkillContextMenu(
+            skills: library.skillsForContextMenu(on: skill),
+            library: library,
+            onUninstall: { pendingUninstall = $0 }
+        )
     }
 
     /// Column headers; clicking Uses toggles sorting by uses
     private var listHeader: some View {
         HStack(spacing: 0) {
             columnTitle("Name")
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 120, maxWidth: .infinity, alignment: .leading)
             columnTitle("Providers")
-                .frame(width: 180, alignment: .leading)
+                .frame(width: SkillRowView.providersWidth, alignment: .leading)
             sortHeader("Uses", isActive: library.sortByUses) { library.sortByUses.toggle() }
-                .frame(width: 90, alignment: .leading)
+                .frame(width: SkillRowView.usesWidth, alignment: .leading)
             columnTitle("Version")
-                .frame(width: 120, alignment: .leading)
+                .frame(width: SkillRowView.versionWidth, alignment: .leading)
         }
         .padding(.bottom, 8)
         .overlay(alignment: .bottom) {
@@ -252,6 +301,7 @@ struct ContentView: View {
 
     private func columnTitle(_ title: String) -> some View {
         Text(title.uppercased())
+            .lineLimit(1)
             .font(DS.Typography.micro)
             .fontWeight(.semibold)
             .foregroundStyle(DS.Colors.textMuted)
@@ -392,7 +442,7 @@ struct ContentView: View {
     private var isLocalSource: Bool {
         switch library.selectedSource {
         case .allInstalled, .provider: return true
-        case .remote: return false
+        case .archived, .remote: return false
         }
     }
 
@@ -400,6 +450,7 @@ struct ContentView: View {
         switch library.selectedSource {
         case .allInstalled: return "All Installed Skills"
         case .provider(let p): return p.displayName
+        case .archived: return "Archived Skills"
         case .remote(let id):
             return library.remoteCatalogs.first { $0.id == id }?.name ?? "Catalog"
         }
@@ -413,6 +464,8 @@ struct ContentView: View {
         case .provider(let p):
             let count = library.filteredSkills.count
             return "\(count) skills for \(p.displayName)"
+        case .archived:
+            return "\(library.archivedCatalog.skillCount) skills agents no longer load"
         case .remote(let id):
             guard let catalog = library.remoteCatalogs.first(where: { $0.id == id }) else { return "" }
             let count = catalog.skillCount

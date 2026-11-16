@@ -25,4 +25,16 @@ public struct ProviderPathResolver: Sendable {
             return "\(homePath)/.claude/skills"
         }
     }
+
+    /// Returns the folder that archived skills move to. Agents don't load skills from here:
+    /// Claude Code only reads top-level skill folders, and Codex scans `~/.codex/skills`
+    /// recursively, so its archive lives outside that tree.
+    public func archivePath(for provider: Provider) -> String {
+        switch provider {
+        case .codex:
+            return "\(homePath)/.codex/skills-disabled"
+        case .claude:
+            return "\(homePath)/.claude/skills/disabled"
+        }
+    }
 }

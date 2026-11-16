@@ -103,6 +103,10 @@ struct SkillCardView: View {
 /// Organism: A skill row in list view
 /// Matches prototype .skill-list-item from skill-card.css
 struct SkillRowView: View {
+    static let providersWidth: CGFloat = 140
+    static let usesWidth: CGFloat = 76
+    static let versionWidth: CGFloat = 72
+
     let skill: Skill
     let usageCount: Int
     let isSelected: Bool
@@ -127,7 +131,7 @@ struct SkillRowView: View {
                         .foregroundStyle(DS.Colors.textPrimary)
                         .lineLimit(1)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 120, maxWidth: .infinity, alignment: .leading)
 
                 // Providers
                 HStack(spacing: 4) {
@@ -135,19 +139,21 @@ struct SkillRowView: View {
                         TagChip.provider(provider)
                     }
                 }
-                .frame(width: 180, alignment: .leading)
+                .frame(width: SkillRowView.providersWidth, alignment: .leading)
 
                 // Uses
                 Text(usageCount == 1 ? "1 use" : "\(usageCount) uses")
                     .font(DS.Typography.mono)
                     .foregroundStyle(usageCount > 0 ? DS.Colors.textSecondary : DS.Colors.textMuted)
-                    .frame(width: 90, alignment: .leading)
+                    .lineLimit(1)
+                    .frame(width: SkillRowView.usesWidth, alignment: .leading)
 
                 // Version
                 Text("v\(skill.version)")
+                    .lineLimit(1)
                     .font(DS.Typography.mono)
                     .foregroundStyle(DS.Colors.textMuted)
-                    .frame(width: 120, alignment: .leading)
+                    .frame(width: SkillRowView.versionWidth, alignment: .leading)
             }
             .padding(.vertical, 12)
             .padding(.horizontal, isHovering ? 12 : 0)

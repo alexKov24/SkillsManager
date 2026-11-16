@@ -6,15 +6,21 @@ public final class LocalSkillRepository: SkillRepository, @unchecked Sendable {
     private let provider: Provider
     private let fileManager: FileManagerProtocol
     private let skillsPath: String
+    private let archivePath: String
+    private let archived: Bool
 
+    /// - Parameter archived: read archived skills instead of installed ones
     public init(
         provider: Provider,
         fileManager: FileManagerProtocol = RealFileManager.shared,
-        pathResolver: ProviderPathResolver = ProviderPathResolver()
+        pathResolver: ProviderPathResolver = ProviderPathResolver(),
+        archived: Bool = false
     ) {
         self.provider = provider
         self.fileManager = fileManager
-        self.skillsPath = pathResolver.skillsPath(for: provider)
+        self.archivePath = pathResolver.archivePath(for: provider)
+        self.skillsPath = archived ? archivePath : pathResolver.skillsPath(for: provider)
+        self.archived = archived
     }
 
     /// Fetch all skills from the local skills directory (recursively)
@@ -42,8 +48,8 @@ public final class LocalSkillRepository: SkillRepository, @unchecked Sendable {
             let itemPath = (path as NSString).appendingPathComponent(item)
             let itemRelativePath = relativePath.isEmpty ? item : "\(relativePath)/\(item)"
 
-            // Skip non-directories
-            guard fileManager.isDirectory(atPath: itemPath) else {
+            // Skip non-directories, and the archive folder when reading installed skills
+            guard fileManager.isDirectory(atPath: itemPath), archived || itemPath != archivePath else {
                 continue
             }
 
@@ -81,7 +87,7 @@ public final class LocalSkillRepository: SkillRepository, @unchecked Sendable {
                         source: .local(provider: provider),
                         repoPath: repoPath
                     )
-                    skills.append(skill)
+                    skills.append(skill.archived(archived))
                 } catch {
                     // Skip invalid skills
                 }

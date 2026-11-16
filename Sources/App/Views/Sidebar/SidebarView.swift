@@ -112,6 +112,16 @@ struct SidebarView: View {
             ) {
                 library.selectedSource = .provider(.codex)
             }
+
+            navItem(
+                icon: "archivebox",
+                label: "Archived",
+                badge: "\(library.archivedCatalog.skillCount)",
+                badgeIsInstalled: false,
+                isActive: library.selectedSource == .archived
+            ) {
+                library.selectedSource = .archived
+            }
         }
     }
 

@@ -15,6 +15,9 @@ public final class SkillLibrary {
     /// Remote catalogs (GitHub repos)
     public var remoteCatalogs: [SkillsCatalog] = []
 
+    /// Archived skills (moved out of the provider folders)
+    public let archivedCatalog: SkillsCatalog
+
     /// All catalogs for UI iteration
     public var catalogs: [SkillsCatalog] {
         [localCatalog] + remoteCatalogs
@@ -22,8 +25,11 @@ public final class SkillLibrary {
 
     // MARK: - Selection State
 
-    /// Currently selected skill
+    /// Currently selected skill (shown in the detail panel)
     public var selectedSkill: Skill?
+
+    /// Skills selected in list view, by listId
+    public private(set) var selectedIds: Set<String> = []
 
     /// Current source filter
     public var selectedSource: SourceFilter = .allInstalled
@@ -70,6 +76,8 @@ public final class SkillLibrary {
         switch selectedSource {
         case .allInstalled, .provider:
             return localCatalog
+        case .archived:
+            return archivedCatalog
         case .remote(let catalogId):
             return remoteCatalogs.first { $0.id == catalogId } ?? localCatalog
         }
@@ -165,6 +173,13 @@ public final class SkillLibrary {
             name: "Local",
             loader: localLoader
         )
+        self.archivedCatalog = SkillsCatalog(
+            name: "Archived",
+            loader: MergedSkillRepository.forLocalSkills(
+                claudeRepo: LocalSkillRepository(provider: .claude, archived: true),
+                codexRepo: LocalSkillRepository(provider: .codex, archived: true)
+            )
+        )
 
         let userTagRepo = UserDefaultsUserTagRepository()
         self.installer = FileSystemSkillInstaller()
@@ -181,6 +196,7 @@ public final class SkillLibrary {
     public init(
         localCatalog: SkillsCatalog,
         remoteCatalogs: [SkillsCatalog] = [],
+        archivedCatalog: SkillsCatalog = SkillsCatalog(name: "Archived", loader: EmptySkillRepository()),
         installer: SkillInstaller,
         userTagRepository: UserTagRepository? = nil,
         skillTags: SkillTags = SkillTags(),
@@ -191,6 +207,7 @@ public final class SkillLibrary {
     ) {
         self.localCatalog = localCatalog
         self.remoteCatalogs = remoteCatalogs
+        self.archivedCatalog = archivedCatalog
         self.installer = installer
         self.userTagRepository = userTagRepository
         self.skillTags = skillTags
@@ -291,7 +308,7 @@ public final class SkillLibrary {
 
         // Load all catalogs in parallel
         await withTaskGroup(of: Void.self) { group in
-            for catalog in catalogs {
+            for catalog in catalogs + [archivedCatalog] {
                 group.addTask {
                     await catalog.loadSkills()
                 }
@@ -311,9 +328,123 @@ public final class SkillLibrary {
         await loadSkills()
     }
 
-    /// Select a skill
+    /// Select a skill (replaces any multi-selection)
     public func select(_ skill: Skill) {
         selectedSkill = skill
+        selectedIds = [skill.listId]
+    }
+
+    /// ⌘-click: add or remove a skill from the selection
+    public func toggleSelection(_ skill: Skill) {
+        if selectedIds.remove(skill.listId) == nil {
+            selectedIds.insert(skill.listId)
+            selectedSkill = skill
+        }
+    }
+
+    /// ⇧-click: select every skill between the last clicked one and this one
+    public func extendSelection(to skill: Skill) {
+        let skills = filteredSkills
+        guard let anchor = selectedSkill,
+              let from = skills.firstIndex(where: { $0.listId == anchor.listId }),
+              let to = skills.firstIndex(where: { $0.listId == skill.listId }) else {
+            select(skill)
+            return
+        }
+        selectedIds.formUnion(skills[min(from, to)...max(from, to)].map(\.listId))
+    }
+
+    /// Whether a skill is part of the selection
+    public func isSelected(_ skill: Skill) -> Bool {
+        selectedIds.contains(skill.listId) || selectedSkill?.listId == skill.listId
+    }
+
+    /// Selected skills, in view order
+    public var selectedSkills: [Skill] {
+        filteredSkills.filter { selectedIds.contains($0.listId) }
+    }
+
+    /// Skills a right-click acts on: the selection if the skill is in it, otherwise just that skill
+    public func skillsForContextMenu(on skill: Skill) -> [Skill] {
+        selectedIds.contains(skill.listId) ? selectedSkills : [skill]
+    }
+
+    private func clearSelection() {
+        selectedIds = []
+        selectedSkill = nil
+    }
+
+    // MARK: - Bulk Actions
+
+    /// Move skills out of the provider folders so agents stop loading them
+    public func archive(_ skills: [Skill]) async {
+        for skill in skills where skill.isInstalled {
+            do {
+                let archived = try await installer.archive(skill)
+                removeFromLocalCatalog(uniqueKey: skill.uniqueKey)
+                updateInstallationStatus(for: skill.uniqueKey, to: [])
+                archivedCatalog.addSkill(archived)
+            } catch {
+                errorMessage = "Archive failed for \(skill.name): \(error.localizedDescription)"
+            }
+        }
+        clearSelection()
+    }
+
+    /// Move archived skills back into the providers they came from
+    public func restore(_ skills: [Skill]) async {
+        for skill in skills where skill.isArchived {
+            do {
+                let restored = try await installer.restore(skill)
+                archivedCatalog.removeSkill(uniqueKey: skill.uniqueKey)
+                localCatalog.addSkill(restored)
+                updateInstallationStatus(for: skill.uniqueKey, to: restored.installedProviders)
+            } catch {
+                errorMessage = "Restore failed for \(skill.name): \(error.localizedDescription)"
+            }
+        }
+        clearSelection()
+    }
+
+    /// Delete skills from every provider they are installed for
+    public func uninstall(_ skills: [Skill]) async {
+        for skill in skills where skill.isInstalled {
+            do {
+                var remaining = skill
+                for provider in skill.installedProviders {
+                    remaining = try await installer.uninstall(remaining, from: provider)
+                }
+                removeFromLocalCatalog(uniqueKey: skill.uniqueKey)
+                updateInstallationStatus(for: skill.uniqueKey, to: [])
+            } catch {
+                errorMessage = "Uninstall failed for \(skill.name): \(error.localizedDescription)"
+            }
+        }
+        clearSelection()
+    }
+
+    /// Install skills for one more provider
+    public func link(_ skills: [Skill], to provider: Provider) async {
+        for skill in skills where !skill.isArchived && !skill.isInstalledFor(provider) {
+            do {
+                let updated = try await installer.install(skill, to: [provider])
+                updateInstallationStatus(for: skill.uniqueKey, to: updated.installedProviders)
+                if !skill.isInstalled {
+                    addToLocalCatalog(skill, providers: updated.installedProviders)
+                }
+                if selectedSkill?.listId == skill.listId {
+                    selectedSkill = updated
+                }
+            } catch {
+                errorMessage = "Linking \(skill.name) to \(provider.displayName) failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Start editing a skill (from the context menu)
+    public func edit(_ skill: Skill) {
+        select(skill)
+        startEditing()
     }
 
     /// Install selected skill to providers
@@ -449,6 +580,7 @@ extension SkillLibrary {
 public enum SourceFilter: Hashable {
     case allInstalled
     case provider(Provider)
+    case archived
     case remote(repoId: UUID)
 }
 
@@ -456,4 +588,11 @@ public enum SourceFilter: Hashable {
 public enum ViewMode {
     case grid
     case list
+}
+
+/// Loader for a catalog that starts empty
+public struct EmptySkillRepository: SkillRepository {
+    public init() {}
+    public func fetchAll() async throws -> [Skill] { [] }
+    public func fetch(id: String) async throws -> Skill? { nil }
 }

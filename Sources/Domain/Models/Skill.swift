@@ -42,6 +42,10 @@ public struct Skill: Sendable, Equatable, Identifiable, Hashable {
     public var referenceCount: Int
     public var scriptCount: Int
 
+    /// Moved out of the provider folders so agents no longer load it.
+    /// `installedProviders` then lists the providers it was archived from.
+    public var isArchived: Bool
+
     // MARK: - Init
 
     public init(
@@ -55,7 +59,8 @@ public struct Skill: Sendable, Equatable, Identifiable, Hashable {
         installedProviders: Set<Provider> = [],
         tags: [String] = [],
         referenceCount: Int = 0,
-        scriptCount: Int = 0
+        scriptCount: Int = 0,
+        isArchived: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -68,6 +73,7 @@ public struct Skill: Sendable, Equatable, Identifiable, Hashable {
         self.tags = tags
         self.referenceCount = referenceCount
         self.scriptCount = scriptCount
+        self.isArchived = isArchived
     }
 
     // MARK: - Computed Properties (Domain Behavior)
@@ -82,6 +88,9 @@ public struct Skill: Sendable, Equatable, Identifiable, Hashable {
 
     /// Unique identifier for SwiftUI List (includes source to prevent collisions across catalogs)
     public var listId: String {
+        if isArchived {
+            return "archived-\(uniqueKey)"
+        }
         switch source {
         case .local(let provider):
             return "local-\(provider.rawValue)-\(id)"
@@ -112,7 +121,7 @@ public struct Skill: Sendable, Equatable, Identifiable, Hashable {
 
     /// Whether this skill is installed for any provider
     public var isInstalled: Bool {
-        !installedProviders.isEmpty
+        !isArchived && !installedProviders.isEmpty
     }
 
     /// Whether this skill has reference files
@@ -127,12 +136,12 @@ public struct Skill: Sendable, Equatable, Identifiable, Hashable {
 
     /// Whether this skill can be edited (only local skills are editable)
     public var isEditable: Bool {
-        source.isLocal
+        source.isLocal && !isArchived
     }
 
     /// Check if skill is installed for a specific provider
     public func isInstalledFor(_ provider: Provider) -> Bool {
-        installedProviders.contains(provider)
+        !isArchived && installedProviders.contains(provider)
     }
 
     // MARK: - Rich Installation Status (User Mental Model)
@@ -182,6 +191,14 @@ public struct Skill: Sendable, Equatable, Identifiable, Hashable {
         return updated
     }
 
+    /// Returns a copy marked as archived or restored
+    /// User thinks: "Put this skill away, but keep it"
+    public func archived(_ isArchived: Bool = true) -> Skill {
+        var updated = self
+        updated.isArchived = isArchived
+        return updated
+    }
+
     /// Returns a copy with updated content
     public func updating(content newContent: String) -> Skill {
         Skill(
@@ -195,7 +212,8 @@ public struct Skill: Sendable, Equatable, Identifiable, Hashable {
             installedProviders: installedProviders,
             tags: tags,
             referenceCount: referenceCount,
-            scriptCount: scriptCount
+            scriptCount: scriptCount,
+            isArchived: isArchived
         )
     }
 
@@ -213,7 +231,8 @@ public struct Skill: Sendable, Equatable, Identifiable, Hashable {
             installedProviders: providers,
             tags: tags,
             referenceCount: referenceCount,
-            scriptCount: scriptCount
+            scriptCount: scriptCount,
+            isArchived: isArchived
         )
     }
 }

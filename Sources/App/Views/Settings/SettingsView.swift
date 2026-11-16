@@ -6,8 +6,14 @@ struct SettingsView: View {
     @State private var settings = AppSettings.shared
 
     var body: some View {
-        UpdatesSettingsView(sparkleUpdater: sparkleUpdater, settings: settings)
-            .frame(width: 450, height: 320)
+        TabView {
+            UpdatesSettingsView(sparkleUpdater: sparkleUpdater, settings: settings)
+                .tabItem { Label("Updates", systemImage: "arrow.down.circle") }
+            UsageSettingsView()
+                .tabItem { Label("Usage", systemImage: "chart.bar") }
+        }
+        .frame(width: 480, height: 520)
+        .preferredColorScheme(.dark)
     }
 }
 

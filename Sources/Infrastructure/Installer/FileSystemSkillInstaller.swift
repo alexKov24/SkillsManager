@@ -80,9 +80,7 @@ public final class FileSystemSkillInstaller: SkillInstaller, @unchecked Sendable
     }
 
     public func uninstall(_ skill: Skill, from provider: Provider) async throws -> Skill {
-        let targetPath = "\(pathResolver.skillsPath(for: provider))/\(skill.id)"
-
-        if fileManager.fileExists(atPath: targetPath) {
+        if let targetPath = folder(of: skill, for: provider) {
             try fileManager.removeItem(atPath: targetPath)
         }
 
@@ -90,8 +88,8 @@ public final class FileSystemSkillInstaller: SkillInstaller, @unchecked Sendable
     }
 
     public func archive(_ skill: Skill) async throws -> Skill {
-        let moves = skill.installedProviders.map {
-            (from: "\(pathResolver.skillsPath(for: $0))/\(skill.id)", to: "\(pathResolver.archivePath(for: $0))/\(skill.id)")
+        let moves = skill.installedProviders.compactMap { provider in
+            folder(of: skill, for: provider).map { (from: $0, to: "\(pathResolver.archivePath(for: provider))/\(skill.id)") }
         }
         try move(moves)
         return skill.archived()
@@ -112,17 +110,46 @@ public final class FileSystemSkillInstaller: SkillInstaller, @unchecked Sendable
         for move in moves where fileManager.fileExists(atPath: move.to) {
             throw SkillInstallerError.alreadyExists(move.to)
         }
-        for move in moves where fileManager.fileExists(atPath: move.from) {
+        for move in moves where exists(move.from) {
             try createDirectory(at: (move.to as NSString).deletingLastPathComponent)
-            try fileManager.moveItem(atPath: move.from, toPath: move.to)
+            if let target = symlinkTarget(of: move.from, movingTo: move.to) {
+                // A relative link would break one folder deeper; re-create it absolute
+                try fileManager.createSymbolicLink(atPath: move.to, withDestinationPath: target)
+                try fileManager.removeItem(atPath: move.from)
+            } else {
+                try fileManager.moveItem(atPath: move.from, toPath: move.to)
+            }
         }
+    }
+
+    /// Whether anything is at the path, including a broken symlink
+    private func exists(_ path: String) -> Bool {
+        (try? fileManager.attributesOfItem(atPath: path)) != nil
+    }
+
+    /// Absolute target of a symlink being moved, or nil if it isn't a symlink.
+    /// A relative target is resolved from the link's folder, or from the new folder
+    /// for links an earlier move already broke.
+    private func symlinkTarget(of path: String, movingTo newPath: String) -> String? {
+        guard let target = try? fileManager.destinationOfSymbolicLink(atPath: path) else { return nil }
+        guard !target.hasPrefix("/") else { return target }
+        let candidates = [path, newPath].map {
+            URL(fileURLWithPath: ($0 as NSString).deletingLastPathComponent)
+                .appendingPathComponent(target).standardizedFileURL.path
+        }
+        return candidates.first { fileManager.fileExists(atPath: $0) } ?? candidates[0]
     }
 
     /// Folder of an installed local skill, to copy when linking it to another provider
     private func installedFolder(of skill: Skill) -> String? {
         guard skill.source.isLocal else { return nil }
-        return skill.installedProviders
-            .map { "\(pathResolver.skillsPath(for: $0))/\(skill.id)" }
+        return skill.installedProviders.lazy.compactMap { self.folder(of: skill, for: $0) }.first
+    }
+
+    /// Where a skill lives for a provider, checking every folder the provider loads from
+    private func folder(of skill: Skill, for provider: Provider) -> String? {
+        pathResolver.skillsPaths(for: provider)
+            .map { "\($0)/\(skill.id)" }
             .first { fileManager.fileExists(atPath: $0) }
     }
 

@@ -13,7 +13,7 @@ struct ProviderPathResolverTests {
 
         let path = resolver.skillsPath(for: .codex)
 
-        #expect(path.contains(".codex/skills/public"))
+        #expect(path.hasSuffix(".codex/skills"))
     }
 
     @Test func `claude provider path is in claude skills directory`() {
@@ -40,7 +40,7 @@ struct ProviderPathResolverTests {
 
         let path = resolver.skillsPath(for: .codex)
 
-        #expect(path.hasSuffix(".codex/skills/public"))
+        #expect(path.hasSuffix(".codex/skills"))
     }
 
     @Test func `claude path ends with correct suffix`() {

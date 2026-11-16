@@ -70,7 +70,7 @@ struct UninstallSheet: View {
             ForEach(Array(skill.installedProviders).sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { provider in
                 optionCard(
                     title: "Unlink from \(provider.displayName)",
-                    description: "Remove the symlink from \(provider == .claude ? "~/.claude/skills/" : "~/.codex/skills/"). The skill stays in central storage and can be re-linked later.",
+                    description: "Remove it from \(provider == .claude ? "~/.claude/skills/" : "~/.codex/skills/ or ~/.agents/skills/"). It stays installed for other providers.",
                     isSelected: action == .unlink && unlinkProvider == provider,
                     isDanger: false
                 ) {

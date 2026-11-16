@@ -131,6 +131,16 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             sectionHeader(title: "Catalogs", count: library.remoteCatalogs.count)
 
+            navItem(
+                icon: "sparkle.magnifyingglass",
+                label: "Discover",
+                badge: "",
+                badgeIsInstalled: false,
+                isActive: library.selectedSource == .discover
+            ) {
+                library.selectedSource = .discover
+            }
+
             ForEach(library.remoteCatalogs) { catalog in
                 navItem(
                     icon: catalog.isLocalDirectory ? "folder" : "link",
@@ -238,6 +248,7 @@ struct SidebarView: View {
 
                 Spacer()
 
+                if !badge.isEmpty {
                 Text(badge)
                     .font(DS.Typography.caption)
                     .fontWeight(.semibold)
@@ -248,6 +259,7 @@ struct SidebarView: View {
                         : Color(hex: 0x3B82F6).opacity(0.12))
                     .foregroundStyle(badgeIsInstalled ? DS.Colors.green : DS.Colors.accent)
                     .clipShape(Capsule())
+                }
             }
             .padding(.vertical, 7)
             .padding(.leading, 24)

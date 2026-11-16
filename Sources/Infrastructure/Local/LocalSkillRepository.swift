@@ -5,7 +5,7 @@ import Domain
 public final class LocalSkillRepository: SkillRepository, @unchecked Sendable {
     private let provider: Provider
     private let fileManager: FileManagerProtocol
-    private let skillsPath: String
+    private let skillsPaths: [String]
     private let archivePath: String
     private let archived: Bool
 
@@ -19,18 +19,19 @@ public final class LocalSkillRepository: SkillRepository, @unchecked Sendable {
         self.provider = provider
         self.fileManager = fileManager
         self.archivePath = pathResolver.archivePath(for: provider)
-        self.skillsPath = archived ? archivePath : pathResolver.skillsPath(for: provider)
+        self.skillsPaths = archived ? [archivePath] : pathResolver.skillsPaths(for: provider)
         self.archived = archived
     }
 
     /// Fetch all skills from the local skills directory (recursively)
     public func fetchAll() async throws -> [Skill] {
-        guard fileManager.fileExists(atPath: skillsPath) else {
-            return []
-        }
-
         var skills: [Skill] = []
-        findSkillsRecursively(in: skillsPath, relativePath: "", skills: &skills)
+        for path in skillsPaths where fileManager.fileExists(atPath: path) {
+            findSkillsRecursively(in: path, relativePath: "", skills: &skills)
+        }
+        // A skill in two folders (e.g. ~/.codex/skills and ~/.agents/skills) shows once
+        var seen = Set<String>()
+        skills = skills.filter { seen.insert($0.uniqueKey).inserted }
 
         return skills.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
@@ -44,7 +45,8 @@ public final class LocalSkillRepository: SkillRepository, @unchecked Sendable {
             return
         }
 
-        for item in contents {
+        // Hidden folders hold built-ins and tooling (.system, .git), not the user's skills
+        for item in contents where !item.hasPrefix(".") {
             let itemPath = (path as NSString).appendingPathComponent(item)
             let itemRelativePath = relativePath.isEmpty ? item : "\(relativePath)/\(item)"
 
@@ -101,10 +103,8 @@ public final class LocalSkillRepository: SkillRepository, @unchecked Sendable {
 
     /// Fetch a specific skill by ID
     public func fetch(id: String) async throws -> Skill? {
-        let skillPath = (skillsPath as NSString).appendingPathComponent(id)
-        let skillFilePath = (skillPath as NSString).appendingPathComponent("SKILL.md")
-
-        guard let data = fileManager.contents(atPath: skillFilePath),
+        let files = skillsPaths.map { ($0 as NSString).appendingPathComponent("\(id)/SKILL.md") }
+        guard let data = files.lazy.compactMap({ self.fileManager.contents(atPath: $0) }).first,
               let content = String(data: data, encoding: .utf8) else {
             return nil
         }

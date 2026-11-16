@@ -76,7 +76,65 @@ struct SkillArchiveTests {
         #expect(archived.allSatisfy { $0.isArchived })
     }
 
+    @Test func `archiving a relative symlink keeps it pointing at the real skill`() async throws {
+        try makeSkill(at: "\(home)/.agents/skills/wp")
+        try FileManager.default.createDirectory(atPath: paths.skillsPath(for: .claude), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            atPath: "\(paths.skillsPath(for: .claude))/wp", withDestinationPath: "../../.agents/skills/wp"
+        )
+
+        let archived = try await installer.archive(localSkill("wp", providers: [.claude]))
+        #expect(exists("\(paths.archivePath(for: .claude))/wp/SKILL.md"))
+
+        _ = try await installer.restore(archived)
+        #expect(exists("\(paths.skillsPath(for: .claude))/wp/SKILL.md"))
+        #expect(exists("\(home)/.agents/skills/wp/SKILL.md"))
+    }
+
+    @Test func `restoring a link an earlier archive broke repairs it`() async throws {
+        try makeSkill(at: "\(home)/.agents/skills/wp")
+        try FileManager.default.createDirectory(atPath: paths.archivePath(for: .claude), withIntermediateDirectories: true)
+        // Moved one folder deeper without re-pointing: now resolves to ~/.claude/.agents/...
+        try FileManager.default.createSymbolicLink(
+            atPath: "\(paths.archivePath(for: .claude))/wp", withDestinationPath: "../../.agents/skills/wp"
+        )
+
+        _ = try await installer.restore(localSkill("wp", providers: [.claude]).archived())
+
+        #expect(exists("\(paths.skillsPath(for: .claude))/wp/SKILL.md"))
+    }
+
+    // MARK: - Codex folders
+
+    @Test func `Codex skills are read from codex and agents folders, skipping hidden ones`() async throws {
+        try makeSkillFolder(.codex, "n8n")
+        try makeSkill(at: "\(home)/.agents/skills/tdd")
+        try makeSkill(at: "\(paths.skillsPath(for: .codex))/.system/imagegen")
+
+        let skills = try await LocalSkillRepository(provider: .codex, pathResolver: paths).fetchAll()
+
+        #expect(skills.map(\.id) == ["n8n", "tdd"])
+    }
+
+    @Test func `uninstall and archive find a Codex skill in the agents folder`() async throws {
+        try makeSkill(at: "\(home)/.agents/skills/tdd")
+        try makeSkill(at: "\(home)/.agents/skills/zoom")
+
+        _ = try await installer.uninstall(localSkill("tdd", providers: [.codex]), from: .codex)
+        _ = try await installer.archive(localSkill("zoom", providers: [.codex]))
+
+        #expect(!exists("\(home)/.agents/skills/tdd"))
+        #expect(!exists("\(home)/.agents/skills/zoom"))
+        #expect(exists("\(paths.archivePath(for: .codex))/zoom/SKILL.md"))
+    }
+
     // MARK: - Helpers
+
+    private func makeSkill(at dir: String) throws {
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let id = (dir as NSString).lastPathComponent
+        try "---\nname: \(id)\ndescription: test\n---\n# \(id)".write(toFile: "\(dir)/SKILL.md", atomically: true, encoding: .utf8)
+    }
 
     private func makeSkillFolder(_ provider: Provider, _ id: String) throws {
         let dir = "\(paths.skillsPath(for: provider))/\(id)"

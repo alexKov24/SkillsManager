@@ -119,6 +119,16 @@ public final class SkillLibrary {
         catalogs.reduce(0) { $0 + $1.skillCount }
     }
 
+    // MARK: - Usage
+
+    /// Use counts from agent session logs, keyed by skill folder name
+    public private(set) var usageCounts: [String: Int] = [:]
+
+    /// How many times agents used this skill
+    public func usageCount(for skill: Skill) -> Int {
+        usageCounts[skill.id] ?? 0
+    }
+
     // MARK: - Dependencies
 
     private let installer: SkillInstaller
@@ -126,6 +136,7 @@ public final class SkillLibrary {
     private let writerFactory: () -> SkillWriter
     private let catalogLoaderFactory: (String) -> SkillRepository
     private let cacheCleaner: (String) throws -> Void
+    private let usageRepository: SkillUsageRepository?
 
     // MARK: - Init
 
@@ -150,6 +161,7 @@ public final class SkillLibrary {
         self.writerFactory = { LocalSkillWriter() }
         self.catalogLoaderFactory = Self.createCatalogLoader
         self.cacheCleaner = Self.cleanCacheForURL
+        self.usageRepository = SessionLogUsageRepository()
         self.remoteCatalogs = Self.loadRemoteCatalogs(loaderFactory: catalogLoaderFactory)
     }
 
@@ -162,7 +174,8 @@ public final class SkillLibrary {
         skillTags: SkillTags = SkillTags(),
         writerFactory: @escaping () -> SkillWriter = { LocalSkillWriter() },
         catalogLoaderFactory: @escaping (String) -> SkillRepository = { ClonedRepoSkillRepository(repoUrl: $0) },
-        cacheCleaner: @escaping (String) throws -> Void = { try ClonedRepoSkillRepository.deleteClone(forRepoUrl: $0) }
+        cacheCleaner: @escaping (String) throws -> Void = { try ClonedRepoSkillRepository.deleteClone(forRepoUrl: $0) },
+        usageRepository: SkillUsageRepository? = nil
     ) {
         self.localCatalog = localCatalog
         self.remoteCatalogs = remoteCatalogs
@@ -172,6 +185,7 @@ public final class SkillLibrary {
         self.writerFactory = writerFactory
         self.catalogLoaderFactory = catalogLoaderFactory
         self.cacheCleaner = cacheCleaner
+        self.usageRepository = usageRepository
     }
 
     // MARK: - Catalog Management
@@ -259,6 +273,10 @@ public final class SkillLibrary {
     public func loadSkills() async {
         errorMessage = nil
 
+        // Scanning session logs is slow; run it alongside catalog loading
+        let usageRepository = self.usageRepository
+        async let counts = usageRepository?.usageCounts()
+
         // Load all catalogs in parallel
         await withTaskGroup(of: Void.self) { group in
             for catalog in catalogs {
@@ -270,6 +288,10 @@ public final class SkillLibrary {
 
         // Sync installation status on remote catalog skills
         syncInstallationStatus()
+
+        if let counts = await counts {
+            usageCounts = counts
+        }
     }
 
     /// Refresh skills

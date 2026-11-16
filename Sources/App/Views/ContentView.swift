@@ -189,6 +189,7 @@ struct ContentView: View {
             ForEach(library.filteredSkills, id: \.listId) { skill in
                 SkillCardView(
                     skill: skill,
+                    usageCount: library.usageCount(for: skill),
                     isSelected: library.selectedSkill?.listId == skill.listId,
                     onSelect: { library.select(skill) },
                     onInstall: {
@@ -205,6 +206,7 @@ struct ContentView: View {
             ForEach(library.filteredSkills, id: \.listId) { skill in
                 SkillRowView(
                     skill: skill,
+                    usageCount: library.usageCount(for: skill),
                     isSelected: library.selectedSkill?.listId == skill.listId,
                     onSelect: { library.select(skill) }
                 )

@@ -14,6 +14,7 @@ struct TagChip: View {
         case codex       // --green-subtle, --green
         case refs        // --cyan-subtle, --cyan
         case scripts     // --orange-subtle, --orange
+        case uses        // --bg-input, --text-secondary
 
         var backgroundColor: Color {
             switch self {
@@ -23,6 +24,7 @@ struct TagChip: View {
             case .codex: return Color(hex: 0x22C55E).opacity(0.12)
             case .refs: return Color(hex: 0x06B6D4).opacity(0.12)
             case .scripts: return Color(hex: 0xF59E0B).opacity(0.12)
+            case .uses: return DS.Colors.bgInput
             }
         }
 
@@ -34,6 +36,7 @@ struct TagChip: View {
             case .codex: return DS.Colors.green
             case .refs: return DS.Colors.cyan
             case .scripts: return DS.Colors.orange
+            case .uses: return DS.Colors.textSecondary
             }
         }
     }
@@ -55,6 +58,11 @@ extension TagChip {
     /// Create a version tag like "v2.1.0"
     static func version(_ v: String) -> TagChip {
         TagChip(text: "v\(v)", style: .version)
+    }
+
+    /// Create a usage tag like "12 uses"
+    static func uses(_ count: Int) -> TagChip {
+        TagChip(text: count == 1 ? "1 use" : "\(count) uses", style: .uses)
     }
 
     /// Create a category tag

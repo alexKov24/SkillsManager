@@ -5,6 +5,7 @@ import Domain
 /// Matches prototype .skill-card from skill-card.css
 struct SkillCardView: View {
     let skill: Skill
+    let usageCount: Int
     let isSelected: Bool
     let onSelect: () -> Void
     var onInstall: (() -> Void)?
@@ -85,6 +86,10 @@ struct SkillCardView: View {
                     if skill.hasScripts {
                         TagChip(text: "\(skill.scriptCount) scripts", style: .scripts)
                     }
+
+                    if usageCount > 0 {
+                        TagChip.uses(usageCount)
+                    }
                 }
             }
             .padding(18)
@@ -99,6 +104,7 @@ struct SkillCardView: View {
 /// Matches prototype .skill-list-item from skill-card.css
 struct SkillRowView: View {
     let skill: Skill
+    let usageCount: Int
     let isSelected: Bool
     let onSelect: () -> Void
 
@@ -130,6 +136,12 @@ struct SkillRowView: View {
                     }
                 }
                 .frame(width: 180, alignment: .leading)
+
+                // Uses
+                Text(usageCount == 1 ? "1 use" : "\(usageCount) uses")
+                    .font(DS.Typography.mono)
+                    .foregroundStyle(usageCount > 0 ? DS.Colors.textSecondary : DS.Colors.textMuted)
+                    .frame(width: 90, alignment: .leading)
 
                 // Version
                 Text("v\(skill.version)")

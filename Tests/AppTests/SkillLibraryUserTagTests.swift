@@ -122,3 +122,41 @@ struct SkillLibraryUserTagTests {
         return catalog
     }
 }
+
+@Suite
+@MainActor
+struct SkillLibraryUsageTests {
+
+    @Test func `usage count comes from session logs by skill folder name`() async {
+        let skill = Skill(
+            id: "frontend-design", name: "Frontend Design", description: "", version: "1.0.0",
+            content: "", source: .local(provider: .claude), installedProviders: [.claude]
+        )
+        let repo = MockSkillRepository()
+        given(repo).fetchAll().willReturn([skill])
+        let usage = MockSkillUsageRepository()
+        given(usage).usageCounts().willReturn(["frontend-design": 7])
+
+        let library = SkillLibrary(
+            localCatalog: SkillsCatalog(name: "Local", loader: repo),
+            installer: MockSkillInstaller(),
+            usageRepository: usage
+        )
+        await library.loadSkills()
+
+        #expect(library.usageCount(for: skill) == 7)
+    }
+
+    @Test func `unused skill has zero uses`() async {
+        let skill = Skill(
+            id: "never-used", name: "never-used", description: "", version: "1.0.0",
+            content: "", source: .local(provider: .claude)
+        )
+        let library = SkillLibrary(
+            localCatalog: SkillsCatalog(name: "Local", loader: MockSkillRepository()),
+            installer: MockSkillInstaller()
+        )
+
+        #expect(library.usageCount(for: skill) == 0)
+    }
+}

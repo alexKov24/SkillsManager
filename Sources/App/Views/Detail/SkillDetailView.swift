@@ -101,6 +101,7 @@ struct SkillDetailView: View {
                 metaItem(label: "References", value: skill.hasReferences ? "\(skill.referenceCount) files" : "None")
                 metaItem(label: "Scripts", value: skill.hasScripts ? "\(skill.scriptCount) files" : "None")
                 metaItem(label: "Source", value: skill.source.isLocal ? "Local" : "GitHub")
+                metaItem(label: "Uses", value: "\(library.usageCount(for: skill))")
             }
         }
     }

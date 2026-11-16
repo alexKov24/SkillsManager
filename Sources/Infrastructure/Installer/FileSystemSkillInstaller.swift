@@ -80,9 +80,7 @@ public final class FileSystemSkillInstaller: SkillInstaller, @unchecked Sendable
     }
 
     public func uninstall(_ skill: Skill, from provider: Provider) async throws -> Skill {
-        let targetPath = "\(pathResolver.skillsPath(for: provider))/\(skill.id)"
-
-        if fileManager.fileExists(atPath: targetPath) {
+        if let targetPath = folder(of: skill, for: provider) {
             try fileManager.removeItem(atPath: targetPath)
         }
 
@@ -90,8 +88,8 @@ public final class FileSystemSkillInstaller: SkillInstaller, @unchecked Sendable
     }
 
     public func archive(_ skill: Skill) async throws -> Skill {
-        let moves = skill.installedProviders.map {
-            (from: "\(pathResolver.skillsPath(for: $0))/\(skill.id)", to: "\(pathResolver.archivePath(for: $0))/\(skill.id)")
+        let moves = skill.installedProviders.compactMap { provider in
+            folder(of: skill, for: provider).map { (from: $0, to: "\(pathResolver.archivePath(for: provider))/\(skill.id)") }
         }
         try move(moves)
         return skill.archived()
@@ -121,8 +119,13 @@ public final class FileSystemSkillInstaller: SkillInstaller, @unchecked Sendable
     /// Folder of an installed local skill, to copy when linking it to another provider
     private func installedFolder(of skill: Skill) -> String? {
         guard skill.source.isLocal else { return nil }
-        return skill.installedProviders
-            .map { "\(pathResolver.skillsPath(for: $0))/\(skill.id)" }
+        return skill.installedProviders.lazy.compactMap { self.folder(of: skill, for: $0) }.first
+    }
+
+    /// Where a skill lives for a provider, checking every folder the provider loads from
+    private func folder(of skill: Skill, for provider: Provider) -> String? {
+        pathResolver.skillsPaths(for: provider)
+            .map { "\($0)/\(skill.id)" }
             .first { fileManager.fileExists(atPath: $0) }
     }
 

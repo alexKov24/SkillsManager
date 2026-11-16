@@ -16,13 +16,24 @@ public struct ProviderPathResolver: Sendable {
         self.homePath = homePath
     }
 
-    /// Returns the path where skills are installed for the given provider
+    /// Returns the path where new skills are installed for the given provider
     public func skillsPath(for provider: Provider) -> String {
         switch provider {
         case .codex:
-            return "\(homePath)/.codex/skills/public"
+            return "\(homePath)/.codex/skills"
         case .claude:
             return "\(homePath)/.claude/skills"
+        }
+    }
+
+    /// Every folder the provider loads skills from; the first is where new skills go.
+    /// Codex also reads the shared `~/.agents/skills` folder.
+    public func skillsPaths(for provider: Provider) -> [String] {
+        switch provider {
+        case .codex:
+            return [skillsPath(for: .codex), "\(homePath)/.agents/skills"]
+        case .claude:
+            return [skillsPath(for: .claude)]
         }
     }
 

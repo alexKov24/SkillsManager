@@ -76,7 +76,37 @@ struct SkillArchiveTests {
         #expect(archived.allSatisfy { $0.isArchived })
     }
 
+    // MARK: - Codex folders
+
+    @Test func `Codex skills are read from codex and agents folders, skipping hidden ones`() async throws {
+        try makeSkillFolder(.codex, "n8n")
+        try makeSkill(at: "\(home)/.agents/skills/tdd")
+        try makeSkill(at: "\(paths.skillsPath(for: .codex))/.system/imagegen")
+
+        let skills = try await LocalSkillRepository(provider: .codex, pathResolver: paths).fetchAll()
+
+        #expect(skills.map(\.id) == ["n8n", "tdd"])
+    }
+
+    @Test func `uninstall and archive find a Codex skill in the agents folder`() async throws {
+        try makeSkill(at: "\(home)/.agents/skills/tdd")
+        try makeSkill(at: "\(home)/.agents/skills/zoom")
+
+        _ = try await installer.uninstall(localSkill("tdd", providers: [.codex]), from: .codex)
+        _ = try await installer.archive(localSkill("zoom", providers: [.codex]))
+
+        #expect(!exists("\(home)/.agents/skills/tdd"))
+        #expect(!exists("\(home)/.agents/skills/zoom"))
+        #expect(exists("\(paths.archivePath(for: .codex))/zoom/SKILL.md"))
+    }
+
     // MARK: - Helpers
+
+    private func makeSkill(at dir: String) throws {
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let id = (dir as NSString).lastPathComponent
+        try "---\nname: \(id)\ndescription: test\n---\n# \(id)".write(toFile: "\(dir)/SKILL.md", atomically: true, encoding: .utf8)
+    }
 
     private func makeSkillFolder(_ provider: Provider, _ id: String) throws {
         let dir = "\(paths.skillsPath(for: provider))/\(id)"

@@ -76,6 +76,34 @@ struct SkillArchiveTests {
         #expect(archived.allSatisfy { $0.isArchived })
     }
 
+    @Test func `archiving a relative symlink keeps it pointing at the real skill`() async throws {
+        try makeSkill(at: "\(home)/.agents/skills/wp")
+        try FileManager.default.createDirectory(atPath: paths.skillsPath(for: .claude), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            atPath: "\(paths.skillsPath(for: .claude))/wp", withDestinationPath: "../../.agents/skills/wp"
+        )
+
+        let archived = try await installer.archive(localSkill("wp", providers: [.claude]))
+        #expect(exists("\(paths.archivePath(for: .claude))/wp/SKILL.md"))
+
+        _ = try await installer.restore(archived)
+        #expect(exists("\(paths.skillsPath(for: .claude))/wp/SKILL.md"))
+        #expect(exists("\(home)/.agents/skills/wp/SKILL.md"))
+    }
+
+    @Test func `restoring a link an earlier archive broke repairs it`() async throws {
+        try makeSkill(at: "\(home)/.agents/skills/wp")
+        try FileManager.default.createDirectory(atPath: paths.archivePath(for: .claude), withIntermediateDirectories: true)
+        // Moved one folder deeper without re-pointing: now resolves to ~/.claude/.agents/...
+        try FileManager.default.createSymbolicLink(
+            atPath: "\(paths.archivePath(for: .claude))/wp", withDestinationPath: "../../.agents/skills/wp"
+        )
+
+        _ = try await installer.restore(localSkill("wp", providers: [.claude]).archived())
+
+        #expect(exists("\(paths.skillsPath(for: .claude))/wp/SKILL.md"))
+    }
+
     // MARK: - Codex folders
 
     @Test func `Codex skills are read from codex and agents folders, skipping hidden ones`() async throws {

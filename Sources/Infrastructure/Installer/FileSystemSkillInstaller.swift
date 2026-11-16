@@ -110,10 +110,34 @@ public final class FileSystemSkillInstaller: SkillInstaller, @unchecked Sendable
         for move in moves where fileManager.fileExists(atPath: move.to) {
             throw SkillInstallerError.alreadyExists(move.to)
         }
-        for move in moves where fileManager.fileExists(atPath: move.from) {
+        for move in moves where exists(move.from) {
             try createDirectory(at: (move.to as NSString).deletingLastPathComponent)
-            try fileManager.moveItem(atPath: move.from, toPath: move.to)
+            if let target = symlinkTarget(of: move.from, movingTo: move.to) {
+                // A relative link would break one folder deeper; re-create it absolute
+                try fileManager.createSymbolicLink(atPath: move.to, withDestinationPath: target)
+                try fileManager.removeItem(atPath: move.from)
+            } else {
+                try fileManager.moveItem(atPath: move.from, toPath: move.to)
+            }
         }
+    }
+
+    /// Whether anything is at the path, including a broken symlink
+    private func exists(_ path: String) -> Bool {
+        (try? fileManager.attributesOfItem(atPath: path)) != nil
+    }
+
+    /// Absolute target of a symlink being moved, or nil if it isn't a symlink.
+    /// A relative target is resolved from the link's folder, or from the new folder
+    /// for links an earlier move already broke.
+    private func symlinkTarget(of path: String, movingTo newPath: String) -> String? {
+        guard let target = try? fileManager.destinationOfSymbolicLink(atPath: path) else { return nil }
+        guard !target.hasPrefix("/") else { return target }
+        let candidates = [path, newPath].map {
+            URL(fileURLWithPath: ($0 as NSString).deletingLastPathComponent)
+                .appendingPathComponent(target).standardizedFileURL.path
+        }
+        return candidates.first { fileManager.fileExists(atPath: $0) } ?? candidates[0]
     }
 
     /// Folder of an installed local skill, to copy when linking it to another provider

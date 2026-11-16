@@ -78,6 +78,8 @@ public final class SkillLibrary {
             return localCatalog
         case .archived:
             return archivedCatalog
+        case .discover:
+            return localCatalog
         case .remote(let catalogId):
             return remoteCatalogs.first { $0.id == catalogId } ?? localCatalog
         }
@@ -139,6 +141,22 @@ public final class SkillLibrary {
         catalogs.reduce(0) { $0 + $1.skillCount }
     }
 
+    // MARK: - Discover
+
+    /// Results of the last directory search
+    public private(set) var directoryResults: [DirectorySkill] = []
+
+    /// Whether a directory search is running
+    public private(set) var isSearchingDirectory = false
+
+    /// Directory skills currently being installed, by id
+    public private(set) var installingIds: Set<String> = []
+
+    /// Whether a directory skill is already installed locally
+    public func isInstalled(_ listing: DirectorySkill) -> Bool {
+        localCatalog.skills.contains { $0.id == listing.skillId || $0.name == listing.skillId }
+    }
+
     // MARK: - Usage
 
     /// Use counts from agent session logs, keyed by skill folder name
@@ -157,6 +175,7 @@ public final class SkillLibrary {
     private let catalogLoaderFactory: (String) -> SkillRepository
     private let cacheCleaner: (String) throws -> Void
     private let usageRepository: SkillUsageRepository?
+    private let directory: SkillDirectory?
 
     // MARK: - Init
 
@@ -189,6 +208,7 @@ public final class SkillLibrary {
         self.catalogLoaderFactory = Self.createCatalogLoader
         self.cacheCleaner = Self.cleanCacheForURL
         self.usageRepository = SessionLogUsageRepository()
+        self.directory = SkillsShDirectory()
         self.remoteCatalogs = Self.loadRemoteCatalogs(loaderFactory: catalogLoaderFactory)
     }
 
@@ -203,7 +223,8 @@ public final class SkillLibrary {
         writerFactory: @escaping () -> SkillWriter = { LocalSkillWriter() },
         catalogLoaderFactory: @escaping (String) -> SkillRepository = { ClonedRepoSkillRepository(repoUrl: $0) },
         cacheCleaner: @escaping (String) throws -> Void = { try ClonedRepoSkillRepository.deleteClone(forRepoUrl: $0) },
-        usageRepository: SkillUsageRepository? = nil
+        usageRepository: SkillUsageRepository? = nil,
+        directory: SkillDirectory? = nil
     ) {
         self.localCatalog = localCatalog
         self.remoteCatalogs = remoteCatalogs
@@ -215,6 +236,7 @@ public final class SkillLibrary {
         self.catalogLoaderFactory = catalogLoaderFactory
         self.cacheCleaner = cacheCleaner
         self.usageRepository = usageRepository
+        self.directory = directory
     }
 
     // MARK: - Catalog Management
@@ -441,6 +463,50 @@ public final class SkillLibrary {
         }
     }
 
+    // MARK: - Directory
+
+    /// Search the public skills directory (needs at least 2 characters)
+    public func searchDirectory(_ query: String) async {
+        let query = query.trimmingCharacters(in: .whitespaces)
+        guard query.count >= 2, let directory else {
+            directoryResults = []
+            return
+        }
+        isSearchingDirectory = true
+        defer { isSearchingDirectory = false }
+        do {
+            directoryResults = try await directory.search(query)
+            errorMessage = nil
+        } catch is CancellationError {
+            // A newer search replaced this one
+        } catch {
+            errorMessage = "Search failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Fetch a directory skill from its GitHub repo and install it
+    public func install(_ listing: DirectorySkill, to provider: Provider) async {
+        installingIds.insert(listing.id)
+        defer { installingIds.remove(listing.id) }
+
+        let loader = catalogLoaderFactory(listing.repoUrl)
+        do {
+            var found = try await loader.fetch(id: listing.skillId)
+            if found == nil {
+                found = try await loader.fetchAll().first { $0.name == listing.skillId || $0.id == listing.skillId }
+            }
+            guard let skill = found else {
+                errorMessage = "Couldn't find \(listing.skillId) in \(listing.repo)"
+                return
+            }
+            let installed = try await installer.install(skill, to: [provider])
+            addToLocalCatalog(skill, providers: installed.installedProviders)
+            updateInstallationStatus(for: skill.uniqueKey, to: installed.installedProviders)
+        } catch {
+            errorMessage = "Installing \(listing.skillId) failed: \(error.localizedDescription)"
+        }
+    }
+
     /// Start editing a skill (from the context menu)
     public func edit(_ skill: Skill) {
         select(skill)
@@ -581,6 +647,7 @@ public enum SourceFilter: Hashable {
     case allInstalled
     case provider(Provider)
     case archived
+    case discover
     case remote(repoId: UUID)
 }
 

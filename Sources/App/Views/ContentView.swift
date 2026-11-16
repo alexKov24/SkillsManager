@@ -84,6 +84,17 @@ struct ContentView: View {
     private var mainContent: some View {
         VStack(spacing: 0) {
             topbar
+            if library.selectedSource == .discover {
+                DiscoverView(library: library)
+            } else {
+                browseContent
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var browseContent: some View {
+        VStack(spacing: 0) {
             categoryTabs
 
             if isLocalSource {
@@ -96,7 +107,6 @@ struct ContentView: View {
 
             contentArea
         }
-        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Topbar
@@ -442,7 +452,7 @@ struct ContentView: View {
     private var isLocalSource: Bool {
         switch library.selectedSource {
         case .allInstalled, .provider: return true
-        case .archived, .remote: return false
+        case .archived, .discover, .remote: return false
         }
     }
 
@@ -451,6 +461,7 @@ struct ContentView: View {
         case .allInstalled: return "All Installed Skills"
         case .provider(let p): return p.displayName
         case .archived: return "Archived Skills"
+        case .discover: return "Discover"
         case .remote(let id):
             return library.remoteCatalogs.first { $0.id == id }?.name ?? "Catalog"
         }
@@ -466,6 +477,8 @@ struct ContentView: View {
             return "\(count) skills for \(p.displayName)"
         case .archived:
             return "\(library.archivedCatalog.skillCount) skills agents no longer load"
+        case .discover:
+            return "Public skills from skills.sh"
         case .remote(let id):
             guard let catalog = library.remoteCatalogs.first(where: { $0.id == id }) else { return "" }
             let count = catalog.skillCount
